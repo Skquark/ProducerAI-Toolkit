@@ -1,0 +1,4 @@
+interface:
+  display_name: "Producer Backup Troubleshooter"
+  short_description: "Diagnose and fix backup/download failures"
+  default_prompt: "Use $producer-backup-troubleshooter to diagnose why my Producer.ai backup command is failing and fix it."
