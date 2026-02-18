@@ -23,6 +23,36 @@ If that date is accurate, songs left in-platform may be lost after the reset. Th
 - Resumes interrupted runs using checkpoints
 - Exports metadata to CSV
 
+## How Song Discovery Works
+
+Producer.ai stores your songs in two places:
+
+- **"My Songs" library view** — shows only ~20 manually saved songs
+- **Sessions** — the bulk of your songs, organized into generation sessions
+
+The `download --all` command scrapes both. For large accounts this discovers 700+ songs across 30+ session pages.
+
+Playlists and projects are scraped separately using the `playlist` and `project` commands.
+
+## Performance
+
+Estimated download times with `--speed normal` (~5 songs/min):
+
+| Library size | Estimated time |
+|---|---|
+| ~50 songs | ~10 min |
+| ~200 songs | ~40 min |
+| ~700 songs | ~2.5 hrs |
+
+Speed presets:
+
+| Preset | Rate | Notes |
+|---|---|---|
+| `--speed slow` | ~3 songs/min | Conservative; use on slow connections |
+| `--speed normal` | ~5 songs/min | Default |
+| `--speed fast` | ~8 songs/min | Tighter delays |
+| `--speed turbo` | ~12 songs/min | Minimal delays; risk of transient errors |
+
 ## What It Does Not Do
 
 - It does not bypass authentication or DRM
@@ -192,6 +222,7 @@ Options:
   --reset                Reset checkpoint and start fresh (default: false)
   --start-id <id>        Start downloading from this song ID
   --end-id <id>          Stop downloading at this song ID (inclusive)
+  --from-json <file>     Download a specific list of songs from a JSON file
 ```
 
 Examples:
@@ -202,6 +233,17 @@ node cli.js download -n 20 --format wav
 node cli.js download --all --format stems
 node cli.js download --all --include-stems --speed fast
 node cli.js download --start-id <song-id> --end-id <song-id>
+node cli.js download --from-json retry.json
+node cli.js download --from-json retry.json --format wav
+```
+
+The `--from-json` flag skips the full library scrape and downloads only the songs listed in the file. Useful for retrying specific failures or recovering songs that need a different format. File format:
+
+```json
+[
+  { "id": "<uuid>", "url": "https://www.producer.ai/song/<uuid>", "title": "Song Title" },
+  "https://www.producer.ai/song/<uuid>"
+]
 ```
 
 ### playlist
@@ -306,11 +348,73 @@ Restart from scratch:
 node cli.js download --all --reset
 ```
 
+## Troubleshooting
+
+### Browser Profile Locked (SingletonLock)
+
+If the browser fails to start with a lock error, a Browser MCP server is sharing the same profile directory. Copy it to a temp location:
+
+```bash
+cp -r ./.browser-profile /tmp/producer-profile-cli
+rm -f /tmp/producer-profile-cli/SingletonLock
+node cli.js download --all -p /tmp/producer-profile-cli
+```
+
+Resume subsequent runs with the same `-p /tmp/producer-profile-cli` flag.
+
+### Google OAuth Login Blocked
+
+If Google shows "This browser or app may not be secure", the toolkit's anti-detection flags should prevent this. If it still appears:
+
+1. Run `node cli.js login` again — it often succeeds on a retry
+2. Ensure you're using the toolkit's built-in login, not an external browser
+
+### Session Expired Mid-Run
+
+If a run fails with "Login or sign up" showing on the page:
+
+1. Re-authenticate: `node cli.js login`
+2. Resume the interrupted run without `--reset`:
+
+```bash
+node cli.js download --all -p /tmp/producer-profile-cli
+```
+
+### Downloads Stalling
+
+If progress stops for several minutes:
+
+- Check `logs/` for error details
+- Kill the process and re-run the same command without `--reset` to resume from checkpoint
+- Songs that consistently fail are likely unavailable; the toolkit skips them after retries
+
+### Only ~20 Songs Found
+
+The library view only shows manually saved songs. Run with `--all` to also scrape session pages:
+
+```bash
+node cli.js download --all
+```
+
 ## Optional AI Title Workflow
 
 ```bash
 node scripts/ai-title-review.js
 node scripts/apply-ai-titles.js
+```
+
+## Recovering a Single Song
+
+If a specific song fails to navigate (`ERR_ABORTED`) or the download event never fires, use the recovery script to diagnose it:
+
+```bash
+node scripts/recover-song.js "https://www.producer.ai/song/<uuid>" [output-dir] [profile-path]
+```
+
+If the song page loads but the MP3 download is unavailable, try WAV or M4A:
+
+```bash
+node cli.js download --from-json retry.json --format wav
 ```
 
 ## Legal and Responsibility

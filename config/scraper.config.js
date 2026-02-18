@@ -57,36 +57,43 @@ export const scraperConfig = {
   },
 
   // Scraping behavior
+  // Tuning guide: Increase delays if you see rate-limit errors or pages not loading fully.
+  //               Decrease delays only on fast, stable connections.
   behavior: {
     // Delays (in milliseconds)
+    // These are base values. The --speed preset (slow/normal/fast/turbo) applies a multiplier
+    // at runtime via applySpeedSettings() in cli.js — editing here changes the normal-speed baseline.
     delays: {
-      betweenSongs: 2000,      // 2 seconds between processing songs
-      afterScroll: 3000,       // 3 seconds after each scroll (allow lazy-load batch to render)
-      afterClick: 1000,        // 1 second after clicking
-      afterDownload: 3000,     // 3 seconds after initiating download
-      navigationWait: 5000     // 5 seconds for page navigation
+      betweenSongs: 2000,      // Delay between song downloads. Increase if seeing 429/rate-limit errors.
+      afterScroll: 3000,       // Wait after each scroll for lazy-loaded content to render.
+                               // Increase on slow connections or if scroll-based discovery misses songs.
+      afterClick: 1000,        // Wait after UI interactions (menu open, button click).
+      afterDownload: 3000,     // Wait after triggering a download before navigating away.
+      navigationWait: 5000     // Wait for page navigation to complete.
     },
 
     // Retry settings
     retries: {
-      maxAttempts: 3,
-      backoffMultiplier: 2,
-      initialDelay: 1000
+      maxAttempts: 3,          // Retries per song on failure. Increase for flaky connections.
+      backoffMultiplier: 2,    // Each retry waits: initialDelay * (backoffMultiplier ^ attempt)
+      initialDelay: 1000       // Base delay in ms before first retry.
     },
 
-    // Infinite scroll
+    // Infinite scroll — used by full library scraping (download --all)
+    // Note: playlist and project commands use 200 scroll attempts regardless of this setting.
     infiniteScroll: {
-      maxScrollAttempts: 50,
-      scrollDistance: 1000,
-      checkInterval: 2000,
-      noNewContentThreshold: 10 // Stop after 10 checks with no new content (be patient with lazy load)
+      maxScrollAttempts: 50,         // Increase if your library has more than ~1000 songs.
+      scrollDistance: 1000,          // Pixels to scroll each iteration (unused; scrollTop = scrollHeight is used).
+      checkInterval: 2000,           // ms between scroll attempts (informational; actual wait is afterScroll).
+      noNewContentThreshold: 10      // Stop after this many consecutive scrolls with no new songs found.
+                                     // Increase if lazy loading is slow and songs are being missed.
     },
 
     // Download settings
     downloads: {
-      concurrent: 2,           // Number of concurrent downloads
-      timeout: 120000,         // 2 minutes timeout per download
-      verifyCompletion: true,  // Check if download completed
+      concurrent: 2,           // Concurrent downloads. Currently only 1 is used per run; reserved for future use.
+      timeout: 120000,         // Per-song download timeout in ms (2 min). Increase for very large files.
+      verifyCompletion: true,  // Verify the download triggered successfully before moving on.
       formats: ['mp3', 'wav', 'm4a', 'stems'], // Supported primary download formats
       assets: ['cover', 'lyrics', 'metadata']
     }

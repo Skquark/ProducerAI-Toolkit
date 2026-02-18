@@ -284,15 +284,16 @@ export class FullLibraryScraper {
 
       const main = document.querySelector('main');
 
-      // Fallback: first non-generic cover alt text.
+      // Use the first heading in DOM order (h1, h2, or h3) — this reliably
+      // returns the collection title before any sub-section headings.
+      const firstHeading = main?.querySelector('h1, h2, h3')?.textContent?.trim();
+      if (firstHeading && firstHeading.toLowerCase() !== 'producer.ai') return firstHeading;
+
+      // Last resort: first non-generic cover art image alt text.
       const genericArtRegex = /^(playlist|project)\s+artwork$/i;
       const images = main ? Array.from(main.querySelectorAll('img[alt]:not([alt=""])')) : [];
       const coverImg = images.find(img => !genericArtRegex.test(img.alt.trim()));
       if (coverImg?.alt) return coverImg.alt.trim();
-
-      // Last resort: first heading in main.
-      const heading = main?.querySelector('h1, h2, h3')?.textContent?.trim();
-      if (heading) return heading;
 
       return defaultName;
     }, defaultName);
@@ -339,11 +340,26 @@ export class FullLibraryScraper {
       }
 
       await this.page.evaluate(() => {
+        // On playlist pages <main> scrolls; on project pages a flex div scrolls instead.
         const main = document.querySelector('main');
-        if (main) {
+        const mainStyle = main ? window.getComputedStyle(main).overflowY : '';
+        if (main && mainStyle !== 'visible' && mainStyle !== 'hidden') {
           main.scrollTop = main.scrollHeight;
         } else {
-          window.scrollBy(0, window.innerHeight);
+          // Find the tallest scrollable container (excludes narrow sidebars)
+          const container = Array.from(document.querySelectorAll('div'))
+            .filter(el => {
+              const s = window.getComputedStyle(el);
+              return (s.overflowY === 'auto' || s.overflowY === 'scroll') &&
+                     el.scrollHeight > el.clientHeight + 100 &&
+                     el.clientWidth > 400;
+            })
+            .sort((a, b) => b.scrollHeight - a.scrollHeight)[0];
+          if (container) {
+            container.scrollTop = container.scrollHeight;
+          } else {
+            window.scrollBy(0, window.innerHeight);
+          }
         }
       });
 
@@ -367,6 +383,85 @@ export class FullLibraryScraper {
    */
   async scrapeProjectByUrl(projectUrl) {
     return this.scrapeCollectionByUrl(projectUrl, 'project');
+  }
+
+  /**
+   * Download a specific list of songs directly (no scraping step).
+   * Accepts an array of { id, url, title } objects (title is optional).
+   * Also accepts plain URL strings: extracts id from /song/<uuid> path.
+   * Skips songs already in the checkpoint; pass reset=true to force re-download.
+   */
+  async downloadGivenSongs(songs, options = {}) {
+    const { format = 'mp3', includeStems = false, reset = false } = options;
+
+    await this.initialize();
+
+    if (reset) {
+      this.downloadedSongs.clear();
+      this.failedSongs = [];
+    }
+
+    // Normalise entries — accept strings (plain URLs) or objects
+    const normalised = songs.map(entry => {
+      if (typeof entry === 'string') {
+        const match = entry.match(/\/song\/([a-f0-9-]{36})/i);
+        const id = match ? match[1] : entry;
+        return { id, url: entry, title: id };
+      }
+      const { id, url, title } = entry;
+      const resolvedId = id || (url || '').match(/\/song\/([a-f0-9-]{36})/i)?.[1] || url;
+      return { id: resolvedId, url: url || `https://www.producer.ai/song/${resolvedId}`, title: title || resolvedId };
+    });
+
+    logger.info(`Downloading ${normalised.length} specified songs (${this.downloadedSongs.size} in checkpoint)`);
+    logger.info(`Format: ${format.toUpperCase()}`);
+
+    const results = { successful: 0, failed: 0, skipped: 0, total: normalised.length };
+
+    for (let i = 0; i < normalised.length; i++) {
+      const song = normalised[i];
+      const progress = `[${i + 1}/${normalised.length}]`;
+
+      if (this.downloadedSongs.has(song.id)) {
+        logger.info(`${progress} Skipping (already downloaded): ${song.title}`);
+        results.skipped++;
+        continue;
+      }
+
+      logger.info(`${progress} Downloading: ${song.title}`);
+
+      try {
+        const result = await this.downloader.downloadSong(song, { format, includeStems });
+
+        if (result.success) {
+          this.downloadedSongs.add(song.id);
+          if (result.skipped) {
+            results.skipped++;
+          } else {
+            results.successful++;
+            logger.info(`${progress} ✓ Success: ${song.title}`);
+          }
+        } else {
+          this.failedSongs.push({ song, error: result.error, timestamp: new Date().toISOString() });
+          results.failed++;
+          logger.error(`${progress} ✗ Failed: ${song.title} - ${result.error}`);
+        }
+
+        await this.saveCheckpoint();
+        await this.page.waitForTimeout(scraperConfig.behavior.delays.betweenSongs);
+
+      } catch (error) {
+        this.failedSongs.push({ song, error: error.message, timestamp: new Date().toISOString() });
+        results.failed++;
+        logger.error(`${progress} ✗ Exception: ${song.title}`, error);
+        if (scraperConfig.progress.screenshotOnError) {
+          await this.page.screenshot({ path: path.join('logs', `error-${song.id}.png`) }).catch(() => {});
+        }
+      }
+    }
+
+    await this.saveCheckpoint();
+    return results;
   }
 
   /**

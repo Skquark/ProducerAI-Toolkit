@@ -23,13 +23,24 @@
     "producer.ai",
     "riffusion",
     "music",
+    "backup",
+    "download",
+    "music-backup",
     "scraper",
     "automation",
     "playwright",
     "browser-automation"
   ],
-  "author": "",
+  "author": "Skquark",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Skquark/ProducerAI-Toolkit.git"
+  },
+  "homepage": "https://github.com/Skquark/ProducerAI-Toolkit#readme",
+  "bugs": {
+    "url": "https://github.com/Skquark/ProducerAI-Toolkit/issues"
+  },
   "dependencies": {
     "chalk": "^5.3.0",
     "cheerio": "^1.0.0",

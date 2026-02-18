@@ -9,9 +9,9 @@ npm install
 npx playwright install chromium
 ```
 
-Note:
-- No separate Browser MCP server is required.
-- This toolkit drives the browser directly via Playwright.
+Notes:
+- No separate Browser MCP server is required — this toolkit drives the browser directly via Playwright.
+- Playwright installs Chromium (~500 MB). Ensure you have sufficient disk space.
 
 ## 2. Login once
 
@@ -19,7 +19,9 @@ Note:
 npm run login
 ```
 
-Sign in to Producer.ai in the opened browser window, then close it.
+Sign in to Producer.ai in the opened browser window, then close it. Your session is saved to `.browser-profile/` so you only need to do this once.
+
+If Google OAuth shows "This browser or app may not be secure", try running the login command again — it usually succeeds on the second attempt.
 
 ## 3. Test with a few songs
 
@@ -32,6 +34,8 @@ node cli.js download -n 3
 ```bash
 node cli.js download --all
 ```
+
+This scrapes both your "My Songs" library and all session pages, then downloads everything found. A large library (~700 songs) takes roughly 2.5 hours at default speed.
 
 Optional variants:
 
@@ -59,4 +63,6 @@ node cli.js playlist-batch playlists.json
 
 ## If a run stops
 
-Run the same command again. Checkpoints in `checkpoints/` are used to resume and skip already downloaded songs.
+Run the **same command again without `--reset`**. Checkpoints in `checkpoints/` record which songs have already been downloaded, so the run picks up where it left off and skips completed songs.
+
+Only use `--reset` when you want to start completely fresh and re-download everything.

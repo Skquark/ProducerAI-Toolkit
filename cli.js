@@ -121,10 +121,14 @@ program
 
     const context = await chromium.launchPersistentContext(profilePath, {
       headless: false,
-      viewport: { width: 1920, height: 1080 }
+      viewport: { width: 1920, height: 1080 },
+      args: ['--disable-blink-features=AutomationControlled'],
+      ignoreDefaultArgs: ['--enable-automation']
     });
 
     const page = context.pages()[0] || await context.newPage();
+    // Hide webdriver flag so Google OAuth doesn't block login
+    await page.addInitScript(() => { Object.defineProperty(navigator, 'webdriver', { get: () => undefined }); });
 
     console.log(chalk.yellow('Navigating to Producer.ai...\n'));
     await page.goto(scraperConfig.urls.base);
@@ -132,7 +136,7 @@ program
     console.log(chalk.green('✓ Browser opened!\n'));
     console.log(chalk.white('Please log in and then close the browser window.\n'));
 
-    await context.waitForEvent('close');
+    await context.waitForEvent('close', { timeout: 300000 }); // 5 min to log in
     console.log(chalk.green('\n✓ Login session saved!\n'));
   });
 
@@ -152,6 +156,7 @@ program
   .option('--reset', 'Reset checkpoint and start fresh', false)
   .option('--start-id <id>', 'Start downloading from this song ID')
   .option('--end-id <id>', 'Stop downloading at this song ID (inclusive)')
+  .option('--from-json <file>', 'Download specific songs from a JSON file (array of {id,url,title} or URL strings)')
   .action(async (options) => {
     console.log(chalk.cyan('\n═══════════════════════════════════════════════════'));
     console.log(chalk.cyan.bold('     Producer.AI Library Downloader              '));
@@ -199,13 +204,29 @@ program
         console.log(chalk.yellow('Checkpoint reset\n'));
       }
 
-      const results = await scraper.downloadAllSongs({
-        format,
-        includeStems: options.includeStems,
-        maxSongs,
-        startId: options.startId,
-        endId: options.endId
-      });
+      let results;
+      if (options.fromJson) {
+        const jsonPath = path.resolve(options.fromJson);
+        if (!await fs.pathExists(jsonPath)) {
+          throw new Error(`JSON file not found: ${jsonPath}`);
+        }
+        const songList = JSON.parse(await fs.readFile(jsonPath, 'utf8'));
+        if (!Array.isArray(songList)) throw new Error('--from-json file must contain a JSON array');
+        console.log(chalk.gray(`Loading ${songList.length} songs from ${path.basename(jsonPath)}\n`));
+        results = await scraper.downloadGivenSongs(songList, {
+          format,
+          includeStems: options.includeStems,
+          reset: options.reset
+        });
+      } else {
+        results = await scraper.downloadAllSongs({
+          format,
+          includeStems: options.includeStems,
+          maxSongs,
+          startId: options.startId,
+          endId: options.endId
+        });
+      }
 
       console.log(chalk.green('\n✓ Download complete!\n'));
       console.log(chalk.white('Results:'));
